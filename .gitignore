@@ -1,0 +1,43 @@
+# -----------------------------
+# OS / filesystem
+# -----------------------------
+.DS_Store
+Thumbs.db
+
+# -----------------------------
+# Editors / IDEs
+# -----------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# -----------------------------
+# Go
+# -----------------------------
+bin/
+dist/
+coverage.out
+*.test
+*.out
+*.exe
+*.exe~
+
+# Local Go module/work caches accidentally created in repo
+pkg/
+
+# -----------------------------
+# Logs / runtime artifacts
+# -----------------------------
+*.log
+*.pid
+
+# -----------------------------
+# Kubernetes / local temp files
+# -----------------------------
+tmp/
+.tmp/
+
+# Screenshot scratch area (keep final screenshots committed)
+docs/screenshots/tmp/

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consumer
+  namespace: demo-2-redpanda-keda
+  labels:
+    app: consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: consumer
+  template:
+    metadata:
+      labels:
+        app: consumer
+    spec:
+      containers:
+        - name: consumer
+          image: demo-2-consumer:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: BROKERS
+              value: redpanda:9092
+            - name: TOPIC
+              value: demo-work
+            - name: GROUP_ID
+              value: demo-work-consumer-group
+            - name: PORT
+              value: "8080"
