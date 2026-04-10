@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-1-cpu-hpa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-1-cpu-hpa
+  template:
+    metadata:
+      labels:
+        app: demo-1-cpu-hpa
+    spec:
+      containers:
+        - name: app
+          image: demo-1-cpu-hpa:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: DEFAULT_WORK_UNITS
+              value: "200000"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

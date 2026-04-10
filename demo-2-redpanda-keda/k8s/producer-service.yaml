@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: producer
+  namespace: demo-2-redpanda-keda
+  labels:
+    app: producer
+spec:
+  type: ClusterIP
+  selector:
+    app: producer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
