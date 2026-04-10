@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda
+  namespace: demo-2-redpanda-keda
+  labels:
+    app: redpanda
+spec:
+  # Single replica keeps the demo predictable and local-dev friendly.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redpanda
+  template:
+    metadata:
+      labels:
+        app: redpanda
+    spec:
+      containers:
+        - name: redpanda
+          image: docker.redpanda.com/redpandadata/redpanda:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: kafka
+              containerPort: 9092
+            - name: rpc
+              containerPort: 33145
+          # Single-node broker with explicit advertised Kafka + RPC addresses.
+          # This avoids controller metadata issues when clients resolve broker endpoints.
+          command:
+            - /bin/sh
+            - -c
+            - >
+              rpk redpanda start
+              --mode dev-container
+              --overprovisioned
+              --smp 1
+              --memory 512M
+              --reserve-memory 0M
+              --node-id 0
+              --kafka-addr PLAINTEXT://0.0.0.0:9092
+              --advertise-kafka-addr PLAINTEXT://redpanda.demo-2-redpanda-keda.svc.cluster.local:9092
+              --rpc-addr 0.0.0.0:33145
+              --advertise-rpc-addr redpanda.demo-2-redpanda-keda.svc.cluster.local:33145
+          readinessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 9092
+            initialDelaySeconds: 15
+            periodSeconds: 10

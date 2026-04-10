@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: demo-2-redpanda-keda
+  labels:
+    app: redpanda
+spec:
+  # ClusterIP provides stable broker DNS:
+  # - redpanda:9092 (same namespace clients)
+  # - redpanda.demo-2-redpanda-keda.svc.cluster.local:9092 (cross-namespace clients)
+  # Expose both Kafka (9092) and RPC (33145) for complete broker metadata wiring.
+  type: ClusterIP
+  selector:
+    app: redpanda
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+      protocol: TCP
+    - name: rpc
+      port: 33145
+      targetPort: 33145
+      protocol: TCP
