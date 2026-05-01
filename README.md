@@ -1,5 +1,7 @@
 # Kubernetes Autoscaling Patterns Demo
 
+[![CI](https://github.com/samuelhajnik/k8s-autoscaling-patterns-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/samuelhajnik/k8s-autoscaling-patterns-demo/actions/workflows/ci.yml)
+
 This repository demonstrates two different Kubernetes autoscaling strategies and the trade-offs behind them:
 
 - **CPU-based autoscaling with HPA**
@@ -413,6 +415,10 @@ k8s-autoscaling-patterns-demo/
 
 ---
 
+## CI
+
+GitHub Actions runs on pushes and pull requests to `main`. The workflow validates Kubernetes YAML manifests with `yamllint` so obvious syntax, formatting, and manifest-structure issues are caught before changes are merged.
+
 ## Summary
 
 This demo highlights a core distributed systems principle:
@@ -424,3 +430,4 @@ CPU-based scaling works well when resource usage reflects current pressure. Lag-
 The main lesson is that autoscaling is constrained by system design. The right autoscaler configuration cannot compensate for the wrong signal, poor partitioning, limited downstream capacity, or a workload that cannot be parallelized.
 
 Reliable autoscaling starts with understanding the workload: what creates pressure, what limits throughput, and what signal best represents the system’s actual need for more capacity.
+

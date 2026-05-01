@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  validate-manifests:
+    name: Validate Kubernetes manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint Kubernetes YAML
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, truthy: disable, new-line-at-end-of-file: disable}}" demo-1-cpu-hpa/k8s
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, truthy: disable, new-line-at-end-of-file: disable}}" demo-2-redpanda-keda/k8s
