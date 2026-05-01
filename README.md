@@ -11,8 +11,6 @@ The goal is not only to show how autoscaling can be configured. The goal is to s
 
 A scaling signal that works well for one system can be misleading for another.
 
----
-
 ## What This Repo Demonstrates
 
 This project compares two fundamentally different workload patterns:
@@ -417,7 +415,9 @@ k8s-autoscaling-patterns-demo/
 
 ## CI
 
-GitHub Actions runs on pushes and pull requests to `main`. The workflow validates Kubernetes YAML manifests with `yamllint` so obvious syntax, formatting, and manifest-structure issues are caught before changes are merged.
+GitHub Actions runs on pushes and pull requests to `main`.
+
+The workflow validates the demo manifests with `yamllint`, `kubeconform`, and a lightweight consistency check for HPA, Service, and KEDA references.
 
 ## Summary
 

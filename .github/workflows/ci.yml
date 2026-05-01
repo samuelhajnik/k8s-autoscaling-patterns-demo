@@ -12,6 +12,9 @@ jobs:
     name: Validate Kubernetes manifests
     runs-on: ubuntu-latest
 
+    env:
+      KUBECONFORM_VERSION: v0.6.7
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,10 +24,17 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install yamllint
-        run: pip install yamllint
+      - name: Install Python tools
+        run: pip install yamllint pyyaml
 
-      - name: Lint Kubernetes YAML
+      - name: Install kubeconform
         run: |
-          yamllint -d "{extends: relaxed, rules: {line-length: disable, truthy: disable, new-line-at-end-of-file: disable}}" demo-1-cpu-hpa/k8s
-          yamllint -d "{extends: relaxed, rules: {line-length: disable, truthy: disable, new-line-at-end-of-file: disable}}" demo-2-redpanda-keda/k8s
+          set -euo pipefail
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tgz -C /tmp
+          sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
+          kubeconform -v
+
+      - name: Verify manifests
+        run: ./scripts/verify-demo.sh
