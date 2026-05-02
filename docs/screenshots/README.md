@@ -18,3 +18,9 @@ Captured HPA / deployment views while running the demos locally. Paths are relat
 | `demo2-before-load.png` | Steady state: low backlog, consumer at minimum replicas. |
 | `demo2-scale-up.png` | Scale-out as lag (backlog) crosses the trigger threshold. |
 | `demo2-scale-down.png` | Scale-in as backlog drains (timing reflects cooldown / stabilization). |
+
+## Automated demo validation (kind)
+
+| File | What it shows |
+|------|---------------|
+| `autoscaling-validation-summary.png` | End-to-end kind validation showing Demo 1 HPA scale-up/down and Demo 2 KEDA lag-driven scale-up/down. |

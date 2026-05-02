@@ -48,7 +48,7 @@ jobs:
         run: |
           bash -n scripts/verify-demo.sh
           bash -n scripts/test-apps.sh
-          bash -n scripts/smoke-kind.sh
+          bash -n scripts/run-autoscaling-demo.sh
 
       - name: Verify manifests
         run: ./scripts/verify-demo.sh

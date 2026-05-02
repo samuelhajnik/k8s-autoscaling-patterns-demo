@@ -1,26 +1,26 @@
 # Demo 1: CPU HPA (Synchronous Go Service)
 
-## 1) Overview
+## Overview
 
 This demo is a synchronous, CPU-heavy Go service running on Kubernetes. It uses native Kubernetes HorizontalPodAutoscaler (HPA) to scale pods based on CPU utilization.
 
-The goal is to treat CPU-driven HPA as a deliberate design choice for compute-bound stateless services and to observe its behavior under sustained load.
+This demo models a compute-bound, stateless request path and uses CPU-driven HPA as the scaling signal, so you can reason about how that choice behaves under sustained load.
 
 ---
 
-## 2) Comparison Context
+## Comparison Context
 
-| Pattern | Workload | Scaling Signal | Best Fit | Main Weakness |
+| Pattern | Workload | Scaling signal | Best fit | Main weakness |
 |---|---|---|---|---|
-| Demo 1: Native HPA on CPU | Synchronous, CPU-heavy Go service | Pod CPU utilization | Stateless compute-heavy APIs/services | Weak signal for queued/backlog-driven pressure |
-| Demo 2: KEDA on lag (backlog) | Asynchronous event-driven consumer workload | Lag (backlog) | Consumer fleets draining queued work | Depends on broker/topic/group correctness and partition parallelism limits |
+| Demo 1: native HPA on CPU | Synchronous, CPU-heavy Go service | Pod CPU utilization | Stateless, compute-heavy APIs and services | Weak signal for queue- or backlog-driven pressure |
+| Demo 2: KEDA on lag (backlog) | Asynchronous, event-driven consumer workload | Lag (backlog) | Consumer fleets draining queued work | Depends on broker, topic, and group correctness; bounded by partition parallelism |
 
 **Key idea:** autoscaling should follow real workload pressure, not just convenient signals like CPU.  
 This demo uses CPU because compute is the direct bottleneck in the synchronous request path.
 
 ---
 
-## 3) Architecture
+## Architecture
 
 ```text
 Client / Load Generator
@@ -37,7 +37,7 @@ Deployment + Service + HPA (CPU)
 
 ---
 
-## 4) Components
+## Components
 
 - `cmd/server`: HTTP service
 - `cmd/loadgen`: local load generator
@@ -54,7 +54,7 @@ Primary endpoints:
 
 ---
 
-## 5) Why CPU Is the Scaling Signal Here
+## Why CPU Is the Scaling Signal Here
 
 - Work is synchronous and CPU-bound, so CPU usage directly reflects pressure.
 - HPA on CPU is native to Kubernetes and operationally simple.
@@ -64,7 +64,9 @@ Primary endpoints:
 
 ---
 
-## 6) How to Run Locally (kind)
+## How to Run Locally (kind)
+
+For the full automated reviewer flow across both demos, run `./scripts/run-autoscaling-demo.sh` from the repository root.
 
 Prerequisites: kind cluster + `metrics-server`.
 
@@ -92,7 +94,7 @@ From the repository root, `./scripts/test-apps.sh` runs `go test` and `go vet` f
 
 ---
 
-## 7) How to Validate Scaling
+## How to Validate Scaling
 
 Generate CPU-heavy load:
 
@@ -123,7 +125,7 @@ curl -sS http://localhost:8080/stats
 
 ---
 
-### Scaling Behavior (Snapshots)
+## Scaling Behavior Snapshots
 
 Initial sustained load drives the first scale-up.  
 After replicas increase, **average CPU across pods decreases**, which can pause further scaling.  
@@ -136,7 +138,7 @@ A stronger sustained load wave triggers additional scale-up—expected behavior 
 
 ---
 
-## 8) Observability
+## Observability
 
 This demo intentionally relies on simple runtime signals:
 
@@ -148,27 +150,18 @@ These are sufficient to reason about pressure, scaling decisions, and recovery b
 
 ---
 
-## 9) What I Observed
+## Runtime Behavior
 
-- At low load, replicas stay near minimum
-- Sustained load increases CPU and triggers scale-up
-- After scaling, average CPU drops and scaling may pause
-- Additional sustained load triggers further scale-up
-- Scale-down happens gradually after load decreases
-- CPU requests significantly affect scaling sensitivity and timing
-
----
-
-## 10) Limitations
-
-- Single-signal autoscaling (CPU only)
-- No awareness of queue/backlog pressure
-- Local demo tuning, not production sizing
-- No advanced resiliency controls (e.g. PDBs, multi-zone placement)
+- low load keeps replicas near the minimum
+- sustained CPU pressure triggers HPA scale-up
+- after replicas increase, average CPU can drop and scaling may plateau
+- additional sustained load can trigger further scale-up
+- scale-down is gradual because HPA avoids immediate downscaling
+- CPU requests strongly influence scaling sensitivity and timing
 
 ---
 
-## 11) Operational Trade-offs
+## Operational Trade-offs
 
 CPU-based autoscaling is simple and effective for synchronous compute paths.
 
@@ -179,10 +172,18 @@ This makes CPU a strong signal for inline processing, but a weak signal for asyn
 
 ---
 
-## 12) What I Learned
+## Engineering Takeaways
 
-- Autoscaling quality depends directly on signal quality
-- CPU is a reliable proxy for synchronous compute-heavy pressure
-- HPA behavior is shaped by resource requests and stabilization windows, not just target values
-- CPU becomes a weak signal when pressure moves to queues
-- Clear configuration and a single source of truth were essential to avoid drift during iteration
+- autoscaling quality depends directly on signal quality
+- CPU is a useful signal for synchronous, compute-bound request paths
+- HPA behavior is shaped by resource requests, metric windows, and stabilization behavior
+- CPU becomes a weak signal when pressure moves outside the service, such as into queues or upstream systems
+
+---
+
+## Scope Boundaries
+
+- single-signal autoscaling (CPU only); no queue or backlog signal
+- no modeling of upstream/downstream latency or external bottlenecks beyond this service
+- manifests and tuning target a focused local validation loop, not production sizing or SLO guarantees
+- omits optional production controls (for example PDBs, topology spread, advanced rollout policy)

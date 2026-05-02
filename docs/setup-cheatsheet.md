@@ -1,5 +1,12 @@
 # Setup Cheatsheet
 
+For a single end-to-end local run (recommended for reviewers), use `./scripts/run-autoscaling-demo.sh` from the repo root.
+
+The command blocks below are a condensed manual setup (they intentionally `cd` into each demo directory before `docker build` and `kubectl apply`). For prerequisites, narrative, and variations, use the per-demo READMEs:
+
+- [Demo 1: CPU-based HPA](../demo-1-cpu-hpa/README.md)
+- [Demo 2: Kafka lag-based KEDA autoscaling](../demo-2-redpanda-keda/README.md)
+
 ## Demo 1 Commands
 
 ```bash

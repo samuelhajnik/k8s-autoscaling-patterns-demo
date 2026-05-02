@@ -109,21 +109,27 @@ Lag-based scaling also depends heavily on consumer design, partitioning, message
 
 ## Quick Start — Reviewer Path
 
-Use this path when reviewing the repository quickly:
+The fastest way to exercise both autoscaling demos locally is the automated kind runner:
 
-1. Run the CPU-based HPA demo.
-2. Observe pod scaling under synchronous load.
-3. Run the lag-based KEDA demo.
-4. Observe backlog growth and consumer scaling.
-5. Compare the behavior of both systems.
+```bash
+./scripts/run-autoscaling-demo.sh
+```
 
-Focus on these questions:
+The script creates or reuses a local kind cluster, installs Metrics Server and KEDA, runs the CPU-based HPA demo, runs the Kafka/Redpanda lag-based KEDA demo, drives load, observes scale-up and scale-down, and prints a stable validation summary.
 
-- What signal is the autoscaler watching?
-- Does that signal reflect real pressure?
-- When does scaling start?
-- Does adding replicas actually improve throughput?
-- What limits further scaling?
+A successful run ends with:
+
+```text
+demo1_hpa_scale_up_observed=true
+demo1_hpa_scale_down_observed=true
+demo2_keda_lag_scale_up_observed=true
+demo2_keda_scale_down_observed=true
+```
+
+For manual exploration, each demo has its own README with step-by-step commands:
+
+- [Demo 1: CPU-based HPA](demo-1-cpu-hpa/README.md)
+- [Demo 2: Kafka lag-based KEDA autoscaling](demo-2-redpanda-keda/README.md)
 
 ---
 
@@ -320,53 +326,62 @@ This model works best when the queue represents unfinished work and consumers ca
 
 ---
 
-## How to Get Started
+## Validation
 
-Use a local Kubernetes environment, such as `kind`.
+### CI validation
 
-Run the CPU-based demo:
+GitHub Actions is intentionally lightweight and does not require a Kubernetes cluster. It validates:
+
+- Go application tests for both demos
+- manifest consistency checks
+- YAML / schema validation (`kubeconform`, optional `yamllint`)
+- script checks (including `bash -n` on `scripts/run-autoscaling-demo.sh`)
+
+This catches application and configuration regressions, but it does not prove live autoscaling behavior.
+
+### Local demo runner (kind)
+
+For reviewers, the recommended local validation path is `./scripts/run-autoscaling-demo.sh`. For step-by-step manual exploration, use the per-demo READMEs linked in the [Quick Start](#quick-start--reviewer-path) section.
+
+That script runs the full local validation path on kind: it creates or reuses a cluster, runs cluster-health preflight checks, installs Metrics Server, validates Demo 1 CPU HPA scale-up and scale-down, installs KEDA, validates Demo 2 Kafka-lag / KEDA scale-up and scale-down, and prints stable `key=value` summary lines at the end (`demo1_hpa_scale_up_observed=`, etc.).
+
+Real autoscaling behavior requires a running Kubernetes cluster, Metrics Server, KEDA, and Redpanda/Kafka runtime behavior. To run the **full automated validation** on **kind**:
 
 ```bash
-cd demo-1-cpu-hpa
+./scripts/run-autoscaling-demo.sh
 ```
 
-Run the lag-based demo:
+The script creates the cluster with a **conservative default** node image (`kindest/node:v1.31.4`). Override if needed, for example:
 
 ```bash
-cd demo-2-redpanda-keda
+KIND_NODE_IMAGE=kindest/node:v1.32.0 ./scripts/run-autoscaling-demo.sh
 ```
 
-Then compare scaling behavior under load.
+It installs Metrics Server (kind-compatible `--kubelet-insecure-tls` and `--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname`) and KEDA from pinned release manifests, deploys both demos, drives load, and **polls** for HPA and KEDA scale-up/scale-down within timeouts. If Metrics Server never becomes ready, the script prints pod describe, logs, and the `v1beta1.metrics.k8s.io` APIService before exiting.
 
----
+For Demo 1 CPU HPA, the runner uses a dedicated namespace per run (`demo-1-hpa-validation-<run-id>` by default), then applies overlay tuning for faster local validation: lower CPU **requests** (10m), aggressive **HPA** target (20% CPU), max 3 replicas, and faster scale behavior (`scripts/demo-overlays/demo-1-hpa-validation.yaml` plus `kubectl set resources`). The checked-in `demo-1-cpu-hpa/k8s/*.yaml` files stay oriented toward manual demos. Load intensity is controlled by **`DEMO1_WORK_UNITS`** and **`DEMO1_LOAD_CONCURRENCY`** (see `./scripts/run-autoscaling-demo.sh --help`). While waiting for scale-out, the script prints **periodic HPA / `kubectl top`** snapshots; on failure it prints deployment/HPA/pod detail and **metrics-server** logs.
 
-## Tests and validation
+For Demo 2, it **deletes and recreates** only the `demo-2-redpanda-keda` namespace before applying manifests (so broker topic / consumer group state does not leak between runs). It applies Redpanda and the producer first, creates the Kafka topic, deploys the consumer scaled to **zero** replicas, seeds a **finite** backlog via `/produce` batches, then applies the **ScaledObject** and waits for it to become Ready (with periodic condition logs). A short background producer keeps lag elevated until scale-out is observed. If KEDA or the ScaledObject misbehaves, it prints **KEDA-focused diagnostics** (namespace workloads, ScaledObject/HPA describe, app logs, `keda-operator` / `keda-metrics-apiserver` logs), not only generic cluster output.
 
-The repository has three validation layers:
+On completion it prints a short, stable summary (four keys, `true`/`false` per observation), for example on full success:
 
-1. App-level Go tests for the demo services.
-2. Static Kubernetes manifest validation with `yamllint`, `kubeconform`, and cross-reference checks.
-3. Optional local runtime smoke testing with kind.
+```text
+demo1_hpa_scale_up_observed=true
+demo1_hpa_scale_down_observed=true
+demo2_keda_lag_scale_up_observed=true
+demo2_keda_scale_down_observed=true
+```
 
-Run app tests:
+Example successful validation run:
+
+![Autoscaling validation summary](docs/screenshots/autoscaling-validation-summary.png)
+
+**Run app tests and static manifest checks (no cluster):**
 
 ```bash
 ./scripts/test-apps.sh
-```
-
-Validate Kubernetes manifests:
-
-```bash
 ./scripts/verify-demo.sh
 ```
-
-Run the local kind smoke test:
-
-```bash
-./scripts/smoke-kind.sh
-```
-
-The smoke test verifies that the demo manifests deploy successfully and that the Demo 1 service responds to health, work, and stats requests. It intentionally does not try to prove full autoscaling behavior in CI, because HPA/KEDA scaling depends on timing, metrics-server/KEDA availability, and local cluster performance.
 
 ---
 
@@ -447,7 +462,7 @@ k8s-autoscaling-patterns-demo/
 
 GitHub Actions runs on pushes and pull requests to `main`.
 
-The workflow runs the Go tests in both demo modules (`./scripts/test-apps.sh`), validates the demo manifests with `yamllint`, `kubeconform`, and a lightweight consistency check for HPA, Service, and KEDA references, and checks shell script syntax. The kind smoke script is not run in CI by default.
+The workflow runs the Go tests in both demo modules (`./scripts/test-apps.sh`), validates the demo manifests with `yamllint`, `kubeconform`, and a lightweight consistency check for HPA, Service, and KEDA references, and checks shell script syntax (including `bash -n scripts/run-autoscaling-demo.sh`). The local kind demo runner is **not** executed in CI: it requires a cluster and proves live autoscaling only when you run `./scripts/run-autoscaling-demo.sh` on your machine.
 
 ## Summary
 

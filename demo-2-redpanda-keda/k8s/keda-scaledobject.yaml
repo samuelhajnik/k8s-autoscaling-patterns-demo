@@ -1,3 +1,5 @@
+# Kafka lag ScaledObject. pollingInterval/cooldown tuned for responsive local/kind validation runs;
+# scripts/run-autoscaling-demo.sh does not patch this file (DEMO2_* env vars control the demo workload).
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
