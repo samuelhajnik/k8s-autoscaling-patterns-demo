@@ -19,6 +19,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Test demo apps
+        run: ./scripts/test-apps.sh
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -35,6 +43,12 @@ jobs:
           tar -xzf /tmp/kubeconform.tgz -C /tmp
           sudo mv /tmp/kubeconform /usr/local/bin/kubeconform
           kubeconform -v
+
+      - name: Validate scripts
+        run: |
+          bash -n scripts/verify-demo.sh
+          bash -n scripts/test-apps.sh
+          bash -n scripts/smoke-kind.sh
 
       - name: Verify manifests
         run: ./scripts/verify-demo.sh

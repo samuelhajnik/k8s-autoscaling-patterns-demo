@@ -86,6 +86,10 @@ Port-forward:
 kubectl port-forward svc/demo-1-cpu-hpa 8080:80
 ```
 
+### App tests
+
+From the repository root, `./scripts/test-apps.sh` runs `go test` and `go vet` for both demos. From this directory you can run `go test ./...` (no Kubernetes required).
+
 ---
 
 ## 7) How to Validate Scaling

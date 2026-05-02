@@ -340,6 +340,36 @@ Then compare scaling behavior under load.
 
 ---
 
+## Tests and validation
+
+The repository has three validation layers:
+
+1. App-level Go tests for the demo services.
+2. Static Kubernetes manifest validation with `yamllint`, `kubeconform`, and cross-reference checks.
+3. Optional local runtime smoke testing with kind.
+
+Run app tests:
+
+```bash
+./scripts/test-apps.sh
+```
+
+Validate Kubernetes manifests:
+
+```bash
+./scripts/verify-demo.sh
+```
+
+Run the local kind smoke test:
+
+```bash
+./scripts/smoke-kind.sh
+```
+
+The smoke test verifies that the demo manifests deploy successfully and that the Demo 1 service responds to health, work, and stats requests. It intentionally does not try to prove full autoscaling behavior in CI, because HPA/KEDA scaling depends on timing, metrics-server/KEDA availability, and local cluster performance.
+
+---
+
 ## Observability
 
 You can verify behavior using simple tools:
@@ -417,7 +447,7 @@ k8s-autoscaling-patterns-demo/
 
 GitHub Actions runs on pushes and pull requests to `main`.
 
-The workflow validates the demo manifests with `yamllint`, `kubeconform`, and a lightweight consistency check for HPA, Service, and KEDA references.
+The workflow runs the Go tests in both demo modules (`./scripts/test-apps.sh`), validates the demo manifests with `yamllint`, `kubeconform`, and a lightweight consistency check for HPA, Service, and KEDA references, and checks shell script syntax. The kind smoke script is not run in CI by default.
 
 ## Summary
 

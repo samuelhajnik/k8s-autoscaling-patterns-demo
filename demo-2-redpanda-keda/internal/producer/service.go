@@ -13,6 +13,11 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
+type messageWriter interface {
+	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+	Close() error
+}
+
 type Config struct {
 	Brokers          string
 	Topic            string
@@ -23,7 +28,7 @@ type Config struct {
 
 type Service struct {
 	cfg    Config
-	writer *kafka.Writer
+	writer messageWriter
 }
 
 type produceRequest struct {
@@ -43,18 +48,41 @@ type workMessage struct {
 }
 
 func LoadConfig() (Config, error) {
-	cfg := Config{
-		Brokers:          os.Getenv("BROKERS"),
-		Topic:            os.Getenv("TOPIC"),
-		Port:             os.Getenv("PORT"),
-		DefaultWorkUnits: mustEnvInt("DEFAULT_WORK_UNITS"),
-		DefaultBurst:     mustEnvInt("DEFAULT_BURST_COUNT"),
-	}
-
-	if cfg.Brokers == "" || cfg.Topic == "" || cfg.Port == "" {
+	brokers := os.Getenv("BROKERS")
+	topic := os.Getenv("TOPIC")
+	port := os.Getenv("PORT")
+	if brokers == "" || topic == "" || port == "" {
 		return Config{}, fmt.Errorf("BROKERS, TOPIC, and PORT must be set")
 	}
-	return cfg, nil
+
+	defaultWorkUnits, err := parseRequiredInt("DEFAULT_WORK_UNITS")
+	if err != nil {
+		return Config{}, err
+	}
+	defaultBurst, err := parseRequiredInt("DEFAULT_BURST_COUNT")
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Config{
+		Brokers:          brokers,
+		Topic:            topic,
+		Port:             port,
+		DefaultWorkUnits: defaultWorkUnits,
+		DefaultBurst:     defaultBurst,
+	}, nil
+}
+
+func parseRequiredInt(name string) (int, error) {
+	val := os.Getenv(name)
+	if val == "" {
+		return 0, fmt.Errorf("%s must be set", name)
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid integer: %w", name, err)
+	}
+	return n, nil
 }
 
 func New(cfg Config) *Service {
@@ -63,6 +91,10 @@ func New(cfg Config) *Service {
 		Topic:    cfg.Topic,
 		Balancer: &kafka.LeastBytes{},
 	}
+	return NewWithWriter(cfg, writer)
+}
+
+func NewWithWriter(cfg Config, writer messageWriter) *Service {
 	return &Service{cfg: cfg, writer: writer}
 }
 
@@ -132,18 +164,6 @@ func (s *Service) handleProduce(w http.ResponseWriter, r *http.Request) {
 		Status:   "accepted",
 		Produced: count,
 	})
-}
-
-func mustEnvInt(name string) int {
-	val := os.Getenv(name)
-	if val == "" {
-		log.Fatalf("%s must be set", name)
-	}
-	n, err := strconv.Atoi(val)
-	if err != nil {
-		log.Fatalf("%s must be a valid integer: %v", name, err)
-	}
-	return n
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -62,6 +62,10 @@ Topic setup:
 - Consumer group: `demo-work-consumer-group`
 - Partitions: `5`
 
+### App tests
+
+From the repository root, `./scripts/test-apps.sh` runs `go test` and `go vet` for both demos. From this directory you can run `go test ./...`; producer and consumer tests use fakes and do not require Redpanda or KEDA.
+
 ---
 
 ## 5) Why Lag Is the Scaling Signal

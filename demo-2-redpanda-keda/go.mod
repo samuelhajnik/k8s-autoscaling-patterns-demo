@@ -1,6 +1,6 @@
 module demo-2-redpanda-keda
 
-go 1.24
+go 1.23
 
 require github.com/segmentio/kafka-go v0.4.49
 
