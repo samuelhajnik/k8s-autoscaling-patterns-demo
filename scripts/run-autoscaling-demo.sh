@@ -5,6 +5,8 @@ set -euo pipefail
 # EXIT trap / cleanup must never hit unset vars under `set -u` — initialize before anything can fail.
 declare -a PORT_FORWARD_PIDS=()
 declare -a LOADGEN_PIDS=()
+DEMO1_PF_PID=""
+DEMO2_PF_PID=""
 demo1_hpa_scale_up_observed=false
 demo1_hpa_scale_down_observed=false
 demo2_keda_lag_scale_up_observed=false
@@ -60,6 +62,8 @@ Environment:
   DEMO2_BACKGROUND_WORK_UNITS Work units per background message (default: 15000)
   DEMO2_BACKGROUND_INTERVAL_SECONDS Delay between background producer requests (default: 0.2)
                         Increase seed/background values if local KEDA scale-up is not triggered reliably.
+  HTTP_WAIT_OVERALL_TIMEOUT_DEMO1  Max seconds for Demo 1 /health via port-forward (default: 180)
+  HTTP_WAIT_OVERALL_TIMEOUT_DEMO2  Max seconds for Demo 2 producer /health via port-forward (default: 180)
 EOF
 }
 
@@ -100,6 +104,10 @@ DEMO2_BACKGROUND_COUNT="${DEMO2_BACKGROUND_COUNT:-250}"
 DEMO2_BACKGROUND_WORK_UNITS="${DEMO2_BACKGROUND_WORK_UNITS:-15000}"
 DEMO2_BACKGROUND_INTERVAL_SECONDS="${DEMO2_BACKGROUND_INTERVAL_SECONDS:-0.2}"
 CLUSTER_READY_TIMEOUT="${CLUSTER_READY_TIMEOUT:-120}"
+HTTP_WAIT_OVERALL_TIMEOUT_DEMO1="${HTTP_WAIT_OVERALL_TIMEOUT_DEMO1:-180}"
+HTTP_WAIT_OVERALL_TIMEOUT_DEMO2="${HTTP_WAIT_OVERALL_TIMEOUT_DEMO2:-180}"
+PF_PORT="${PF_PORT:-18081}"
+PF2_PORT="${PF2_PORT:-18082}"
 
 require_cmd() {
 	local name="$1"
@@ -791,23 +799,106 @@ stop_port_forwards() {
 	done
 
 	PORT_FORWARD_PIDS=()
+	DEMO1_PF_PID=""
+	DEMO2_PF_PID=""
 
 	eval "$old_opts"
 }
 
-wait_for_http() {
+remove_pid_from_port_forwards() {
+	local dead_pid="$1"
+	local -a kept=()
+	local p
+	if [[ -z "$dead_pid" ]]; then
+		return 0
+	fi
+	for p in "${PORT_FORWARD_PIDS[@]}"; do
+		if [[ "$p" != "$dead_pid" ]]; then
+			kept+=("$p")
+		fi
+	done
+	PORT_FORWARD_PIDS=("${kept[@]}")
+}
+
+start_or_restart_demo1_port_forward() {
+	if [[ -n "${DEMO1_PF_PID:-}" ]]; then
+		if kill -0 "$DEMO1_PF_PID" 2>/dev/null; then
+			kill "$DEMO1_PF_PID" 2>/dev/null || true
+			wait "$DEMO1_PF_PID" 2>/dev/null || true
+		fi
+		remove_pid_from_port_forwards "$DEMO1_PF_PID"
+	fi
+	kubectl -n "$DEMO1_NS" port-forward "svc/${DEMO1_DEPLOY}" "${PF_PORT}:80" &
+	DEMO1_PF_PID=$!
+	PORT_FORWARD_PIDS+=("$DEMO1_PF_PID")
+}
+
+start_or_restart_demo2_port_forward() {
+	if [[ -n "${DEMO2_PF_PID:-}" ]]; then
+		if kill -0 "$DEMO2_PF_PID" 2>/dev/null; then
+			kill "$DEMO2_PF_PID" 2>/dev/null || true
+			wait "$DEMO2_PF_PID" 2>/dev/null || true
+		fi
+		remove_pid_from_port_forwards "$DEMO2_PF_PID"
+	fi
+	kubectl port-forward -n "$NS_DEMO2" svc/producer "${PF2_PORT}:8080" &
+	DEMO2_PF_PID=$!
+	PORT_FORWARD_PIDS+=("$DEMO2_PF_PID")
+}
+
+# Waits until URL responds, restarting the named port-forward if its process exits (e.g. rolling pod behind a Service).
+# shellcheck disable=SC2310  # intentional: kill -0 status drives restart path
+wait_for_http_with_port_forward_restart() {
 	local url="$1"
-	local max_attempts="${2:-40}"
-	local i=0
-	while ((i < max_attempts)); do
+	local overall_timeout_sec="$2"
+	local which_pf="${3:?}"
+
+	local deadline=$((SECONDS + overall_timeout_sec))
+
+	while ((SECONDS < deadline)); do
+		case "$which_pf" in
+		demo1)
+			if [[ -z "${DEMO1_PF_PID:-}" ]] || ! kill -0 "$DEMO1_PF_PID" 2>/dev/null; then
+				log "==> Demo 1: port-forward missing or exited; restarting (kubectl port-forward svc/${DEMO1_DEPLOY})"
+				start_or_restart_demo1_port_forward
+				sleep 1
+			fi
+			;;
+		demo2)
+			if [[ -z "${DEMO2_PF_PID:-}" ]] || ! kill -0 "$DEMO2_PF_PID" 2>/dev/null; then
+				log "==> Demo 2: port-forward missing or exited; restarting (kubectl port-forward svc/producer)"
+				start_or_restart_demo2_port_forward
+				sleep 1
+			fi
+			;;
+		*)
+			log_err "wait_for_http_with_port_forward_restart: unknown port-forward mode: ${which_pf}"
+			return 1
+			;;
+		esac
+
 		if curl -sf --max-time 3 "$url" >/dev/null; then
 			return 0
 		fi
 		sleep 2
-		i=$((i + 1))
 	done
-	log_err "timeout waiting for HTTP: $url"
+
+	log_err "timeout waiting for HTTP: ${url} (overall limit ${overall_timeout_sec}s, port-forward restarts applied while waiting)"
 	return 1
+}
+
+ensure_demo1_port_forward_running() {
+	if [[ -z "${DEMO1_PF_PID:-}" ]] || ! kill -0 "$DEMO1_PF_PID" 2>/dev/null; then
+		log "==> Demo 1: port-forward not running; restarting before continuing"
+		start_or_restart_demo1_port_forward
+	fi
+}
+
+ensure_demo2_port_forward_running() {
+	if [[ -z "${DEMO2_PF_PID:-}" ]] || ! kill -0 "$DEMO2_PF_PID" 2>/dev/null; then
+		log "==> Demo 2: port-forward not running; restarting before continuing"
+		start_or_restart_demo2_port_forward
+	fi
 }
 
 print_metrics_server_diagnostics() {
@@ -1047,13 +1138,19 @@ log "==> Demo 1: applying base HPA in namespace ${DEMO1_NS}"
 kubectl_safe apply -n "$DEMO1_NS" -f demo-1-cpu-hpa/k8s/hpa.yaml
 apply_demo1_validation_tuning
 
-PF_PORT="18081"
-kubectl -n "$DEMO1_NS" port-forward "svc/${DEMO1_DEPLOY}" "${PF_PORT}:80" &
-PORT_FORWARD_PIDS+=("$!")
+log "==> Demo 1: confirming rollout complete and pods Ready before port-forward"
+if ! run_with_timeout 150 kubectl --request-timeout=60s rollout status deployment/"$DEMO1_DEPLOY" -n "$DEMO1_NS" --timeout=120s; then
+	exit 1
+fi
+if ! wait_for_pod_ready_by_label "$DEMO1_NS" "app=${DEMO1_DEPLOY}" 120; then
+	exit 1
+fi
+
+start_or_restart_demo1_port_forward
 
 BASE="http://127.0.0.1:${PF_PORT}"
 log "==> Waiting for Demo 1 HTTP (${BASE})"
-wait_for_http "${BASE}/health"
+wait_for_http_with_port_forward_restart "${BASE}/health" "$HTTP_WAIT_OVERALL_TIMEOUT_DEMO1" demo1
 
 log "==> GET /health"
 curl -sf "${BASE}/health" >/dev/null
@@ -1072,6 +1169,8 @@ fi
 
 log "==> Demo 1 basic HTTP checks passed"
 
+ensure_demo1_port_forward_running
+
 log "==> Demo 1: waiting for metrics-server metrics for HPA"
 if ! wait_for_hpa_metric_ready; then
 	print_demo1_scale_up_failure_diagnostics
@@ -1080,7 +1179,7 @@ fi
 
 log "==> Demo 1: generating CPU load for scale-up (concurrency=${DEMO1_LOAD_CONCURRENCY}, workUnits=${DEMO1_WORK_UNITS})"
 LOADGEN_PIDS=()
-for i in $(seq 1 "$DEMO1_LOAD_CONCURRENCY"); do
+for _ in $(seq 1 "$DEMO1_LOAD_CONCURRENCY"); do
 	(
 		while true; do
 			curl -sS -m 180 -X POST "${BASE}/work" -H 'Content-Type: application/json' \
@@ -1142,13 +1241,21 @@ if ! wait_until_replicas_match "consumer" "$NS_DEMO2" 0 180; then
 	mr_fail_keda "Demo 2: consumer did not reach 0 replicas"
 fi
 
-PF2_PORT="18082"
-kubectl port-forward -n "$NS_DEMO2" svc/producer "${PF2_PORT}:8080" &
-PORT_FORWARD_PIDS+=("$!")
+log "==> Demo 2: confirming producer rollout complete and pod Ready before port-forward"
+if ! run_with_timeout 150 kubectl --request-timeout=60s rollout status deployment/producer -n "$NS_DEMO2" --timeout=120s; then
+	mr_fail_keda "Demo 2: producer rollout did not complete"
+fi
+if ! wait_for_pod_ready_by_label "$NS_DEMO2" "app=producer" 180; then
+	mr_fail_keda "Demo 2: producer pod not Ready before port-forward"
+fi
+
+start_or_restart_demo2_port_forward
 
 PROD_BASE="http://127.0.0.1:${PF2_PORT}"
 log "==> Waiting for producer HTTP (${PROD_BASE})"
-wait_for_http "${PROD_BASE}/health"
+wait_for_http_with_port_forward_restart "${PROD_BASE}/health" "$HTTP_WAIT_OVERALL_TIMEOUT_DEMO2" demo2
+
+ensure_demo2_port_forward_running
 
 log "==> Demo 2: seeding finite backlog (${DEMO2_SEED_BATCHES} batches, count=${DEMO2_SEED_COUNT}, workUnits=${DEMO2_SEED_WORK_UNITS}; consumer replicas=0)"
 for _b in $(seq 1 "$DEMO2_SEED_BATCHES"); do

@@ -1,0 +1,29 @@
+name: Full demo verification
+
+on:
+  workflow_dispatch:
+
+jobs:
+  full-demo:
+    name: Full demo verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kind and kubectl
+        uses: helm/kind-action@v1
+        with:
+          install_only: true
+
+      - name: Make scripts executable
+        run: |
+          set -euo pipefail
+          chmod +x scripts/*.sh
+
+      - name: Run full autoscaling demo
+        run: |
+          set -euo pipefail
+          ./scripts/run-autoscaling-demo.sh
