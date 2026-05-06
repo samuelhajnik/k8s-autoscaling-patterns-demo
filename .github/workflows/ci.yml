@@ -49,6 +49,7 @@ jobs:
           bash -n scripts/verify-demo.sh
           bash -n scripts/test-apps.sh
           bash -n scripts/run-autoscaling-demo.sh
+          bash -n scripts/lib/*.sh
 
       - name: Verify manifests
         run: ./scripts/verify-demo.sh
